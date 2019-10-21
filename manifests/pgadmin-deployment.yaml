@@ -1,0 +1,86 @@
+# Copyright 2018 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# This is the only manifest in the project. It sets up a single pod with 1
+# replica. That pod contains two containers, pgAdmin and Cloud SQL Proxy.
+# There is no Service because we are using a very simple port-forward to
+# access the pod.
+
+# Documentation https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
+# This is a deploys the pgadmin web application used for postgress database
+# management.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgadmin4-deployment
+  namespace: default
+  labels:
+    app: pgadmin4
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pgadmin4
+  template:
+    metadata:
+      labels:
+        app: pgadmin4
+    spec:
+      serviceAccount: postgres
+      containers:
+        # This is the official pgAdmin 4 container
+        - image: dpage/pgadmin4
+          name: pgadmin4
+          # You can make environment variables from GKE secrets
+          # You can read them directly using 'secretKeyRef'
+          env:
+            - name: PGADMIN_DEFAULT_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: pgadmin-console
+                  key: user
+            - name: PGADMIN_DEFAULT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pgadmin-console
+                  key: password
+          ports:
+            - containerPort: 80
+              name: pgadmin4
+        # We are pulling the Cloud SQL Proxy container from the official Google
+        # container repository
+        - image: gcr.io/cloudsql-docker/gce-proxy:1.14
+          imagePullPolicy: Always
+          name: cloudsql-proxy
+          securityContext:
+            runAsUser: 2  # non-root user
+            allowPrivilegeEscalation: false
+          # You can make environment variables from GKE configurations
+          # You can read them from a configmap directly with configMapKeyRef
+          env:
+            - name: INSTANCE_CONNECTION
+              valueFrom:
+                configMapKeyRef:
+                  name: connectionname
+                  key: connectionname
+          # Connecting to the PRIVATE IP of the DB instance.
+          # We will be getting the GCP credentials dynamically via the metadata
+          # service proxied by the workload identity agent running inside GKE
+          # that maps the Kubernetes Service Account to the GCP Service account
+          # automatically.
+          command: [
+            "/cloud_sql_proxy",
+            "-instances=$(INSTANCE_CONNECTION)=tcp:5432",
+            "-ip_address_types=PRIVATE"
+          ]
