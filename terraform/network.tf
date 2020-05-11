@@ -167,7 +167,7 @@ data "template_file" "startup_script" {
 resource "google_compute_instance" "bastion" {
   name = local.hostname
   machine_type = "g1-small"
-  zone = format("%s-a", var.region)
+  zone = var.zone
   project = var.project
   tags = ["bastion"]
 
